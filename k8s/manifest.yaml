@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haipproxy
+spec:
+  selector:
+    matchLabels:
+      app: haipproxy
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: haipproxy
+    spec:
+      containers:
+        - name: haipproxy
+          image: your_image
+          command: ["sh", "run.sh"]
+          volumeMounts:
+            - name: haipproxy-volume
+              mountPath: /haipproxy
+        - name: redis
+          image: redis:alpine
+          command: ["redis-server", "--requirepass", "123456"]
+          ports:
+            - containerPort: 6379
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.15.2
+          args:
+            - "--redis.addr=redis:6379"
+            - "--redis.password=123456"
+          ports:
+            - containerPort: 9121
+        - name: splash
+          image: scrapinghub/splash
+          ports:
+            - containerPort: 8050
+      volumes:
+        - name: haipproxy-volume
+          hostPath:
+            path: /path/to/haipproxy
+      imagePullSecrets:
+        - name: your-image-pull-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haipproxy
+spec:
+  selector:
+    app: haipproxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3128
+      protocol: TCP
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+    - name: redis-exporter
+      port: 9121
+      targetPort: 9121
+      protocol: TCP
+    - name: splash
+      port: 8050
+      targetPort: 8050
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: haipproxy
+  namespace: prometheus
+spec:
+  endpoints:
+    - port: http
+      interval: 15s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: haipproxy
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: haipproxy-redis
+  namespace: prometheus
+spec:
+  endpoints:
+    - port: redis-exporter
+      interval: 15s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: haipproxy
